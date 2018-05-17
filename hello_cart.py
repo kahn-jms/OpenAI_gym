@@ -22,7 +22,7 @@ from keras.optimizers import SGD
 env = gym.make('CartPole-v0')
 env.reset()
 
-initial_games = 100
+initial_games = 300
 goal_steps = 500
 accepted_score = 50
 
@@ -85,9 +85,9 @@ def create_initial_population():
 def keras_fully_connected(input_size):
 
     model = Sequential()
-    model.add(Dense(64, activation='relu', input_dim=input_size))
+    model.add(Dense(24, activation='relu', input_dim=input_size))
     model.add(Dropout(0.5))
-    model.add(Dense(64, activation='relu'))
+    model.add(Dense(24, activation='relu'))
     model.add(Dropout(0.5))
     model.add(Dense(2, activation='softmax'))
 
@@ -105,7 +105,6 @@ def train_model(training_data, model=False):
     x_train = np.array([i[0] for i in training_data])
     # Dunno why we need this let's see
     #x_train = x_train.reshape(-1, len(training_data[0][0]), 1)
-    print(len(x_train[0]))
 
     # Shouldn't this also be a numpy array?
     y_train = np.array([i[1] for i in training_data])
@@ -130,7 +129,6 @@ def train_model(training_data, model=False):
         write_images = True,
     )
 
-    print(x_train.shape)
     model.fit(
         x_train,
         y_train,

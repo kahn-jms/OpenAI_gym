@@ -36,7 +36,7 @@ class Agent():
     def _build_model(self):
         # Neural Net for Deep-Q learning Model
         model = Sequential()
-        model.add(Dense(24, input_dim=self.state_size, activation='relu'))
+        model.add(Dense(24, input_dim=2*self.state_size, activation='relu'))
         #model.add(Dropout(0.25))
         model.add(Dense(24, activation='relu'))
         model.add(Dense(24, activation='relu'))
@@ -60,36 +60,39 @@ class Agent():
     def save_model(self):
             self.brain.save(self.weight_backup)
 
-    def act(self, state):
+    def act(self, state, prev_state):
         if np.random.rand() <= self.exploration_rate:
             # Ideally this would return env.action_space.sample()
             # But we don't have the env passed to Agent init
             return random.randrange(self.action_size)
-        act_values = self.brain.predict(state)
+        act_values = self.brain.predict(np.append(prev_state, state))
         return np.argmax(act_values[0])
 
-    def remember(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
+    def remember(self, state, action, reward, prev_state, next_state, done):
+        self.memory.append((state, action, reward, prev_state, next_state, done))
 
     def replay(self, sample_batch_size):
         if len(self.memory) < sample_batch_size:
             return
         # Only train on small batch of past games to save memory
+        # Should be able to call states directly from self.memory, just need to make sure
+        # i don't grabe the first or last play of a game, otherwise will get state from a
+        # different game
         sample_batch = random.sample(self.memory, sample_batch_size)
-        for state, action, reward, next_state, done in sample_batch:
+        for state, action, reward, prev_state, next_state, done in sample_batch:
             # In case of cartpole this will always be 1 or 0, other games it's different ranges
             target = reward
             if not done:
                 # First make a prediction on the result of our action (observation after action)
                 # This tells us if we will need to move left or right after the next move?
-                next_pred = self.brain.predict(next_state)
+                next_pred = self.brain.predict(np.append(state, next_state))
                 #print(next_pred)
                 # Add this (weighted) to the reward (1) 
                 # Why is this necessary? Why not just gamma * pred? that is ~21 anyway
                 target = reward + self.gamma * np.amax(next_pred[0])
             # Now predict based on current observation
             # target_f is a [[x, y]] array
-            target_f = self.brain.predict(state)
+            target_f = self.brain.predict(prev_state, state)
             # Whichever element in the one-hot output was the actual resulting action from the observation (0 or 1), replace that
             # element with the weighted prediction from the following step, this is supposed to encourage survival
             # If the next step doesn't exist, it means this action killed us, so only replaced with 1, a.k.a heavily
@@ -104,8 +107,8 @@ class Agent():
 
 class CartPole:
     def __init__(self):
-        self.sample_batch_size = 32
-        self.episodes          = 10000
+        self.sample_batch_size = 128
+        self.episodes          = 1000
         self.env               = gym.make('CartPole-v1')
 
         self.state_size        = self.env.observation_space.shape[0]
@@ -116,6 +119,7 @@ class CartPole:
     def run(self):
         try:
             for index_episode in range(self.episodes):
+                prev_state = np.zeros((1, self.state_size))
                 state = self.env.reset()
                 state = np.reshape(state, [1, self.state_size])
 
@@ -124,11 +128,12 @@ class CartPole:
                 while not done:
 #                    self.env.render()
 
-                    action = self.agent.act(state)
+                    action = self.agent.act(state, prev_state)
 
                     next_state, reward, done, _ = self.env.step(action)
                     next_state = np.reshape(next_state, [1, self.state_size])
-                    self.agent.remember(state, action, reward, next_state, done)
+                    self.agent.remember(state, action, reward, prev_state, next_state, done)
+                    prev_state = state
                     state = next_state
                     index += 1
                 print("Episode {}# Score: {}".format(index_episode, index + 1))
