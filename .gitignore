@@ -1,1 +1,4 @@
 *.npy
+*.swp
+*.h5
+logs/
