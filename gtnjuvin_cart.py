@@ -122,7 +122,7 @@ class CartPole:
                 done = False
                 index = 0
                 while not done:
-#                    self.env.render()
+                    self.env.render()
 
                     action = self.agent.act(state)
 

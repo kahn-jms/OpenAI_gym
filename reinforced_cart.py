@@ -3,6 +3,9 @@
 
 # Copy of self teaching network from 
 # https://medium.com/@gtnjuvin/my-journey-into-deep-q-learning-with-keras-and-gym-3e779cc12762
+# This version looks two steps into the past to make prediction of next step.
+# Ideally this would be enough steps to handle momentum but this is hard to handle in the beginning I guess
+# In the simple case of CartPole this could just be random moves?
 # James Kahn 2018
 
 from collections import deque
@@ -20,7 +23,7 @@ from keras.optimizers import Adam, SGD
 class Agent():
     def __init__(self, state_size, action_size):
         #self.weight_backup      = "cartpole_weight.h5"
-        self.weight_backup      = "trained_nn.h5"
+        self.weight_backup      = "reinforced_cartpole.h5"
         self.state_size         = state_size
         self.action_size        = action_size
         self.memory             = deque(maxlen=2000)
@@ -36,10 +39,10 @@ class Agent():
     def _build_model(self):
         # Neural Net for Deep-Q learning Model
         model = Sequential()
-        model.add(Dense(24, input_dim=2*self.state_size, activation='relu'))
+        model.add(Dense(32, input_dim=2*self.state_size, activation='relu'))
         #model.add(Dropout(0.25))
-        model.add(Dense(24, activation='relu'))
-        model.add(Dense(24, activation='relu'))
+        model.add(Dense(32, activation='relu'))
+        #model.add(Dense(24, activation='relu'))
         model.add(Dense(self.action_size, activation='linear'))
         model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
         #sgd = SGD(lr=self.learning_rate,
@@ -65,7 +68,7 @@ class Agent():
             # Ideally this would return env.action_space.sample()
             # But we don't have the env passed to Agent init
             return random.randrange(self.action_size)
-        act_values = self.brain.predict(np.append(prev_state, state))
+        act_values = self.brain.predict(np.append(prev_state, state, axis=1))
         return np.argmax(act_values[0])
 
     def remember(self, state, action, reward, prev_state, next_state, done):
@@ -85,14 +88,14 @@ class Agent():
             if not done:
                 # First make a prediction on the result of our action (observation after action)
                 # This tells us if we will need to move left or right after the next move?
-                next_pred = self.brain.predict(np.append(state, next_state))
+                next_pred = self.brain.predict(np.append(state, next_state, axis=1))
                 #print(next_pred)
                 # Add this (weighted) to the reward (1) 
                 # Why is this necessary? Why not just gamma * pred? that is ~21 anyway
                 target = reward + self.gamma * np.amax(next_pred[0])
             # Now predict based on current observation
             # target_f is a [[x, y]] array
-            target_f = self.brain.predict(prev_state, state)
+            target_f = self.brain.predict(np.append(prev_state, state, axis=1))
             # Whichever element in the one-hot output was the actual resulting action from the observation (0 or 1), replace that
             # element with the weighted prediction from the following step, this is supposed to encourage survival
             # If the next step doesn't exist, it means this action killed us, so only replaced with 1, a.k.a heavily
@@ -101,7 +104,7 @@ class Agent():
             # slowly strengthen successful pathways and weaken the failing ones.
             # Can it be extended to include previous steps too? Or two steps into the future?
             target_f[0][action] = target
-            self.brain.fit(state, target_f, epochs=1, verbose=0)
+            self.brain.fit(np.append(prev_state, state, axis=1), target_f, epochs=1, verbose=0)
         if self.exploration_rate > self.exploration_min:
             self.exploration_rate *= self.exploration_decay
 
@@ -127,7 +130,6 @@ class CartPole:
                 index = 0
                 while not done:
 #                    self.env.render()
-
                     action = self.agent.act(state, prev_state)
 
                     next_state, reward, done, _ = self.env.step(action)
