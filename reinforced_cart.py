@@ -5,6 +5,7 @@
 # https://medium.com/@gtnjuvin/my-journey-into-deep-q-learning-with-keras-and-gym-3e779cc12762
 # This version looks two steps into the past to make prediction of next step.
 # Ideally this would be enough steps to handle momentum but this is hard to handle in the beginning I guess
+# Looks like momentum is already programmed into the state so not necessary for us to find.
 # In the simple case of CartPole this could just be random moves?
 # James Kahn 2018
 
