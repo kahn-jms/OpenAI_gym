@@ -112,7 +112,6 @@ class CartPole:
         self.action_size       = self.env.action_space.n
         self.agent             = Agent(self.state_size, self.action_size)
 
-
     def run(self):
         try:
             for index_episode in range(self.episodes):
