@@ -11,7 +11,7 @@ from collections import deque
 import gym
 import numpy as np
 
-# import keras
+import keras
 from keras.models import Model, Sequential, load_model
 from keras.layers import Input, Dense, Activation
 from keras.layers.merge import Add
@@ -105,10 +105,10 @@ class AC_Agent:
         model.compile(loss='mse', optimizer=adam)
 
         # Recover previous training
-        # if os.path.isfile(self.weight_backup):
-        #     model.load_weights(self.weight_backup)
-        #     # model = load_model(self.weight_backup)
-        #     self.exploration_rate = self.exploration_min
+        if os.path.isfile(self.actor_backup):
+            model.load_weights(self.actor_backup)
+            # model = load_model(self.weight_backup)
+            # self.exploration_rate = self.exploration_min
         return state_input, model
 
     def _build_critic_model(self):
@@ -124,7 +124,7 @@ class AC_Agent:
         a1 = Dense(48)(action_input)
 
         merged = Add()([s2, a1])
-        m1 = Dense(24, activation='relu')(merged)
+        m1 = Dense(48, activation='relu')(merged)
 
         # This is really where the magic is
         # The issue with DQN was that the action space was limited and discrete
@@ -139,8 +139,8 @@ class AC_Agent:
         model.compile(loss='mse', optimizer=adam)
 
         # Recover previous training
-        # if os.path.isfile(self.weight_backup):
-        #     model.load_weights(self.weight_backup)
+        if os.path.isfile(self.critic_backup):
+            model.load_weights(self.critic_backup)
         #     # model = load_model(self.weight_backup)
         #     self.exploration_rate = self.exploration_min
         return state_input, action_input, model
@@ -152,6 +152,7 @@ class AC_Agent:
             predicted_action = self.actor_model.predict(state)
 
             # I don't really understand what's going on here
+            print('grads s')
             grads = self.sess.run(
                 self.critic_grads,
                 feed_dict={
@@ -160,6 +161,7 @@ class AC_Agent:
                 })[0]
 
             # and here
+            print('opt s')
             self.sess.run(
                 self.optimize,
                 feed_dict={
@@ -180,7 +182,9 @@ class AC_Agent:
 
             reward = np.reshape(reward, (1, 1))
             action = np.reshape(action, (1, self.env.action_space.shape[0]))
+            print('crit s')
             self.critic_model.fit([state, action], reward, verbose=0)
+            print('crit f')
 
     # Was previously called replay()
     def _train(self):
@@ -222,6 +226,7 @@ class AC_Agent:
 
                 done = False
                 index = 0
+                tot_reward = 0
                 for step in range(max_steps):
                     if render:
                         self.env.render()
@@ -234,16 +239,16 @@ class AC_Agent:
                     next_state, reward, done, _ = self.env.step(action)
                     next_state = next_state.reshape((1, self.env.observation_space.shape[0]))
 
-                    self._remember(state, action, reward, next_state, done)
                     self._train()
 
                     state = next_state
                     index += 1
+                    tot_reward += reward
 
                     if done:
                         break
 
                 if verbose:
-                    print("Episode {}# Steps: {}".format(index_episode, index))
+                    print("Episode {}# Steps: {} Reward: {}".format(index_episode, index, tot_reward))
         finally:
             self._save_models()

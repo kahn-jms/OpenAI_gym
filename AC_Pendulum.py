@@ -15,7 +15,7 @@ from AC_Agent_module import AC_Agent
 
 # Play some random games at first to get a feel
 def play_rand_games():
-    env = gym.make('BipedalWalker-v2')
+    env = gym.make('Pendulum-v0')
     max_steps = 50
     rand_episodes = 10
     rewards = []
@@ -44,11 +44,11 @@ def play_rand_games():
 # play_rand_games()
 
 
-class Bipedal_Walker:
+class Pendulum:
     def __init__(self):
-        self.max_steps = 10000
-        self.episodes = 2000
-        self.env = gym.make('BipedalWalker-v2')
+        self.max_steps = 2000
+        self.episodes = 10000
+        self.env = gym.make('Pendulum-v0')
         self.env.reset()
 
         self.sess = tf.Session()
@@ -56,7 +56,7 @@ class Bipedal_Walker:
 
         self.actor_critic = AC_Agent(self.env, self.sess)
 
-    def train_walker(self, episodes=None, max_steps=None, render=False, verbose=False):
+    def trainer(self, episodes=None, max_steps=None, render=False, verbose=False):
         if episodes is None:
             episodes = self.episodes
         if max_steps is None:
@@ -65,7 +65,7 @@ class Bipedal_Walker:
 
 
 if __name__ == "__main__":
-    biped = Bipedal_Walker()
+    pendulum = Pendulum()
     import cProfile
     # cProfile.run('biped.train_walker(verbose=True)')
-    biped.train_walker(verbose=True)
+    pendulum.trainer(verbose=True)
