@@ -26,8 +26,8 @@ class AC_Agent:
         self.env = env
         self.sess = sess
 
-        self.actor_backup = "{}_actor_backup.h5".format(env.spec.id)
-        self.critic_backup = "{}_critic_backup.h5".format(env.spec.id)
+        self.actor_backup = os.path.join('backup', '{}_actor_backup.h5'.format(env.spec.id))
+        self.critic_backup = os.path.join('backup', '{}_critic_backup.h5'.format(env.spec.id))
 
         self.memory = deque(maxlen=2000)
         self.learning_rate = 0.001
@@ -70,11 +70,17 @@ class AC_Agent:
 
         # Initialise everything for gradient calcs
         # I think this should be global_variables_initializer() instead
-        self.sess.run(tf.initialize_all_variables())
+        # self.sess.run(tf.initialize_all_variables())
+        self.sess.run(tf.global_variables_initializer())
 
-    # def _save_models(self):
-    #         self.actor_model.save(self.actor_backup)
-    #         self.critic_model.save(self.critic_backup)
+    def _save_models(self):
+        if not os.path.exists('backup'):
+            try:
+                os.makedirs('backup')
+            except OSError as err:
+                print("OS error: {0}".format(err))
+        self.actor_model.save(self.actor_backup)
+        self.critic_model.save(self.critic_backup)
 
     def _remember(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
@@ -82,7 +88,7 @@ class AC_Agent:
     def _act(self, state):
         if np.random.rand() <= self.exploration_rate:
             return self.env.action_space.sample()
-        act_values = self.brain.predict(state)
+        act_values = self.actor_model.predict(state)
         return np.argmax(act_values[0])
 
     def _build_actor_model(self):
@@ -113,7 +119,7 @@ class AC_Agent:
         s2 = Dense(48)(s1)
 
         # Also need action input to complete dat dere chain rule
-        action_input = Input(shape=self.env.observation_space.shape)
+        action_input = Input(shape=self.env.action_space.shape)
         # Why linear activation?
         a1 = Dense(48)(action_input)
 
@@ -172,7 +178,9 @@ class AC_Agent:
                 future_reward = self.critic_model.predict([next_state, target_action])[0][0]
                 reward += self.gamma * future_reward
 
-            self.critic_model.fit([state, action], reward)  # , verbose=0)
+            reward = np.reshape(reward, (1, 1))
+            action = np.reshape(action, (1, self.env.action_space.shape[0]))
+            self.critic_model.fit([state, action], reward, verbose=0)
 
     # Was previously called replay()
     def _train(self):
@@ -221,7 +229,7 @@ class AC_Agent:
                     state = np.reshape(state, (1, self.env.observation_space.shape[0]))
 
                     action = self._act(state)
-                    #action = np.reshape(action, (1, self.env.action_space.shape[0]))
+                    # action = np.reshape(action, (1, self.env.action_space.shape[0]))
 
                     next_state, reward, done, _ = self.env.step(action)
                     next_state = next_state.reshape((1, self.env.observation_space.shape[0]))
@@ -238,4 +246,4 @@ class AC_Agent:
                 if verbose:
                     print("Episode {}# Steps: {}".format(index_episode, index))
         finally:
-            self.agent.save_model()
+            self._save_models()

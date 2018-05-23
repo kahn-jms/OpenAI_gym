@@ -45,8 +45,8 @@ def play_rand_games():
 
 class Bipedal_Walker:
     def __init__(self):
-        self.max_steps = 500
-        self.episodes = 1000
+        self.max_steps = 10
+        self.episodes = 10
         self.env = gym.make('BipedalWalker-v2')
         self.env.reset()
 
