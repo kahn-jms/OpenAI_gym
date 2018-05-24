@@ -36,7 +36,7 @@ class AC_Agent:
         self.sample_batch_size = 32
 
         self.exploration_rate = 1.0
-        self.exploration_decay = 0.995
+        self.exploration_decay = 0.9999
 
         # Calculate de/dA as = de/dC * dC/dA, where e is error, C critic, A act
         # Actor model and gradients setup
@@ -152,7 +152,6 @@ class AC_Agent:
             predicted_action = self.actor_model.predict(state)
 
             # I don't really understand what's going on here
-            print('grads s')
             grads = self.sess.run(
                 self.critic_grads,
                 feed_dict={
@@ -161,7 +160,6 @@ class AC_Agent:
                 })[0]
 
             # and here
-            print('opt s')
             self.sess.run(
                 self.optimize,
                 feed_dict={
@@ -182,9 +180,7 @@ class AC_Agent:
 
             reward = np.reshape(reward, (1, 1))
             action = np.reshape(action, (1, self.env.action_space.shape[0]))
-            print('crit s')
             self.critic_model.fit([state, action], reward, verbose=0)
-            print('crit f')
 
     # Was previously called replay()
     def _train(self):
@@ -199,11 +195,14 @@ class AC_Agent:
     def _update_actor_target(self):
         actor_model_weights = self.actor_model.get_weights()
         actor_target_weights = self.target_actor_model.get_weights()
-        print('amw:', actor_model_weights)
-        print('amw:', actor_target_weights)
+        # print('amw:', actor_model_weights)
+        # print('amw:', actor_target_weights)
 
         for i in range(len(actor_target_weights)):
-            actor_target_weights[i] = actor_model_weights[i]
+            # I think we need tau weighting here?
+            # actor_target_weights[i] = actor_model_weights[i]
+            actor_target_weights[i] = (self.tau * actor_model_weights[i] +
+                                       (1 - self.tau) * actor_target_weights[i])
         self.target_actor_model.set_weights(actor_target_weights)
 
     def _update_critic_target(self):
@@ -211,7 +210,10 @@ class AC_Agent:
         critic_target_weights = self.target_critic_model.get_weights()
 
         for i in range(len(critic_target_weights)):
-            critic_target_weights[i] = critic_model_weights[i]
+            # I think we need tau weighting here?
+            # critic_target_weights[i] = critic_model_weights[i]
+            critic_target_weights[i] = (self.tau * critic_model_weights[i] +
+                                        (1 - self.tau) * critic_target_weights[i])
         self.target_critic_model.set_weights(critic_target_weights)
 
     def _update_targets(self):
@@ -219,7 +221,7 @@ class AC_Agent:
         self._update_critic_target()
 
     # Do everything
-    def train_agent(self, episodes, max_steps, render=False, verbose=False):
+    def train_agent(self, episodes, max_steps, render=False, render_freq=100, verbose=False):
         try:
             for index_episode in range(episodes):
                 state = self.env.reset()
@@ -228,7 +230,7 @@ class AC_Agent:
                 index = 0
                 tot_reward = 0
                 for step in range(max_steps):
-                    if render:
+                    if render and (index_episode % render_freq == 0):
                         self.env.render()
 
                     state = np.reshape(state, (1, self.env.observation_space.shape[0]))
@@ -238,8 +240,11 @@ class AC_Agent:
 
                     next_state, reward, done, _ = self.env.step(action)
                     next_state = next_state.reshape((1, self.env.observation_space.shape[0]))
+                    self._remember(state, action, reward, next_state, done)
 
+                    # Should this go here? I dunno
                     self._train()
+                    self._update_targets()
 
                     state = next_state
                     index += 1

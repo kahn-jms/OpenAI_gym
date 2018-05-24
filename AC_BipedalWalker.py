@@ -46,8 +46,8 @@ def play_rand_games():
 
 class Bipedal_Walker:
     def __init__(self):
-        self.max_steps = 10000
-        self.episodes = 2000
+        self.max_steps = 2000
+        self.episodes = 20000
         self.env = gym.make('BipedalWalker-v2')
         self.env.reset()
 
@@ -56,16 +56,16 @@ class Bipedal_Walker:
 
         self.actor_critic = AC_Agent(self.env, self.sess)
 
-    def train_walker(self, episodes=None, max_steps=None, render=False, verbose=False):
+    def trainer(self, episodes=None, max_steps=None, render=False, render_freq=100, verbose=False):
         if episodes is None:
             episodes = self.episodes
         if max_steps is None:
             max_steps = self.max_steps
-        self.actor_critic.train_agent(episodes, max_steps, render, verbose)
+        self.actor_critic.train_agent(episodes, max_steps, render, render_freq, verbose)
 
 
 if __name__ == "__main__":
     biped = Bipedal_Walker()
     import cProfile
     # cProfile.run('biped.train_walker(verbose=True)')
-    biped.train_walker(verbose=True)
+    biped.trainer(render=True, render_freq=500, verbose=True)

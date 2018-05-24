@@ -25,12 +25,12 @@ class Pendulum:
 
         self.actor_critic = AC_Agent(self.env, self.sess)
 
-    def trainer(self, episodes=None, max_steps=None, render=False, verbose=False):
+    def trainer(self, episodes=None, max_steps=None, render=False, render_freq=100, verbose=False):
         if episodes is None:
             episodes = self.episodes
         if max_steps is None:
             max_steps = self.max_steps
-        self.actor_critic.train_agent(episodes, max_steps, render, verbose)
+        self.actor_critic.train_agent(episodes, max_steps, render, render_freq, verbose)
 
     # Play some random games at first to get a feel
     def play_rand_games(self):
@@ -62,4 +62,4 @@ if __name__ == "__main__":
     pendulum = Pendulum()
     import cProfile
     # cProfile.run('biped.train_walker(verbose=True)')
-    pendulum.trainer(verbose=True)
+    pendulum.trainer(render=True, render_freq=500, verbose=True)
