@@ -95,9 +95,9 @@ class AC_Agent:
     def _build_actor_model(self):
         # Need this to return with the model itself
         state_input = Input(shape=self.env.observation_space.shape)
-        d1 = Dense(24, activation='relu')(state_input)
-        d2 = Dense(48, activation='relu')(d1)
-        d3 = Dense(24, activation='relu')(d2)
+        d1 = Dense(12, activation='relu')(state_input)
+        d2 = Dense(24, activation='relu')(d1)
+        d3 = Dense(12, activation='relu')(d2)
         # Why shape[0] here?
         output = Dense(self.env.action_space.shape[0], activation='relu')(d3)
 
@@ -115,17 +115,17 @@ class AC_Agent:
     def _build_critic_model(self):
         # Need this to return with the model itself
         state_input = Input(shape=self.env.observation_space.shape)
-        s1 = Dense(24, activation='relu')(state_input)
+        s1 = Dense(12, activation='relu')(state_input)
         # Why linear activation?
-        s2 = Dense(48)(s1)
+        s2 = Dense(12)(s1)
 
         # Also need action input to complete dat dere chain rule
         action_input = Input(shape=self.env.action_space.shape)
         # Why linear activation?
-        a1 = Dense(48)(action_input)
+        a1 = Dense(12)(action_input)
 
         merged = Add()([s2, a1])
-        m1 = Dense(48, activation='relu')(merged)
+        m1 = Dense(16, activation='relu')(merged)
 
         # This is really where the magic is
         # The issue with DQN was that the action space was limited and discrete

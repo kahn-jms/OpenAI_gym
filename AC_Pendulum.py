@@ -6,7 +6,7 @@
 
 import gym
 
-import keras
+# import keras
 from keras import backend as K
 import tensorflow as tf
 
@@ -15,8 +15,10 @@ from AC_Agent_module import AC_Agent
 
 class Pendulum:
     def __init__(self):
-        self.max_steps = 2000
+        self.max_steps = 200
         self.episodes = 10000
+        # To override global 200 step limit in OpenAI use:
+        # gym.make('Pendulum-v0').env
         self.env = gym.make('Pendulum-v0')
         self.env.reset()
 
@@ -60,6 +62,7 @@ class Pendulum:
 
 if __name__ == "__main__":
     pendulum = Pendulum()
-    import cProfile
+    # import cProfile
     # cProfile.run('biped.train_walker(verbose=True)')
-    pendulum.trainer(render=True, render_freq=500, verbose=True)
+    pendulum.trainer(verbose=True)
+    # pendulum.trainer(render=True, render_freq=500, verbose=True)
