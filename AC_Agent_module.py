@@ -36,7 +36,8 @@ class AC_Agent:
         self.sample_batch_size = 32
 
         self.exploration_rate = 1.0
-        self.exploration_decay = 0.9999
+        self.exploration_decay = 0.995
+        self.exploration_min = 0.01
 
         # Calculate de/dA as = de/dC * dC/dA, where e is error, C critic, A act
         # Actor model and gradients setup
@@ -191,6 +192,12 @@ class AC_Agent:
         sample_batch = random.sample(self.memory, self.sample_batch_size)
         self._train_critic(sample_batch)
         self._train_actor(sample_batch)
+
+        # Putting exploration decay here for now, could also only decay after each episode
+        # Really depends on how quickly an episode goes
+        # Eventually want to use exponential decay instead
+        if self.exploration_rate > self.exploration_min:
+            self.exploration_rate *= self.exploration_decay
 
     def _update_actor_target(self):
         actor_model_weights = self.actor_model.get_weights()
