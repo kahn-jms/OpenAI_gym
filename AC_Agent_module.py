@@ -36,14 +36,15 @@ class AC_Agent:
         self.sample_batch_size = 32
 
         self.exploration_rate = 1.0
-        self.exploration_decay = 0.9999
+        self.exploration_decay = 0.995
+        self.exploration_min = 0.01
 
         # Calculate de/dA as = de/dC * dC/dA, where e is error, C critic, A act
         # Actor model and gradients setup
         self.actor_state_input, self.actor_model = self._build_actor_model()
         _, self.target_actor_model = self._build_actor_model()
 
-        # Where we will feed de/dC (from critic) as input to actor trianing
+        # Where we will feed de/dC (from critic) as input to actor training
         self.actor_critic_grad = tf.placeholder(tf.float32, (None, self.env.action_space.shape[0]))
 
         # Calculate dC/dA (from actor), performs  partial derivatives of actor model outputs
@@ -89,7 +90,9 @@ class AC_Agent:
         if np.random.rand() <= self.exploration_rate:
             return self.env.action_space.sample()
         act_values = self.actor_model.predict(state)
-        return np.argmax(act_values[0])
+        # For discrete choice games:
+        # return np.argmax(act_values[0])
+        return act_values[0]
 
     def _build_actor_model(self):
         # Need this to return with the model itself
@@ -193,6 +196,12 @@ class AC_Agent:
         sample_batch = random.sample(self.memory, self.sample_batch_size)
         self._train_critic(sample_batch)
         self._train_actor(sample_batch)
+
+        # Putting exploration decay here for now, could also only decay after each episode
+        # Really depends on how quickly an episode goes
+        # Eventually want to use exponential decay instead
+        if self.exploration_rate > self.exploration_min:
+            self.exploration_rate *= self.exploration_decay
 
     def _update_actor_target(self):
         actor_model_weights = self.actor_model.get_weights()
