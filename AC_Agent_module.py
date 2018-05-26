@@ -44,7 +44,7 @@ class AC_Agent:
         self.actor_state_input, self.actor_model = self._build_actor_model()
         _, self.target_actor_model = self._build_actor_model()
 
-        # Where we will feed de/dC (from critic) as input to actor trianing
+        # Where we will feed de/dC (from critic) as input to actor training
         self.actor_critic_grad = tf.placeholder(tf.float32, (None, self.env.action_space.shape[0]))
 
         # Calculate dC/dA (from actor), performs  partial derivatives of actor model outputs
@@ -90,7 +90,9 @@ class AC_Agent:
         if np.random.rand() <= self.exploration_rate:
             return self.env.action_space.sample()
         act_values = self.actor_model.predict(state)
-        return np.argmax(act_values[0])
+        # For discrete choice games:
+        # return np.argmax(act_values[0])
+        return act_values[0]
 
     def _build_actor_model(self):
         # Need this to return with the model itself
@@ -172,6 +174,7 @@ class AC_Agent:
         for sample in samples:
             state, action, reward, next_state, done = sample
             if not done:
+                # Should this be the target actor model used?
                 target_action = self.actor_model.predict(next_state)
                 # Predict the reward the next action we would take woud have on the new state
                 # resulting from the current action we took.
