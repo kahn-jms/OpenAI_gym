@@ -13,37 +13,6 @@ import tensorflow as tf
 from AC_Agent_module import AC_Agent
 
 
-# Play some random games at first to get a feel
-def play_rand_games():
-    env = gym.make('BipedalWalker-v2')
-    max_steps = 50
-    rand_episodes = 10
-    rewards = []
-    for _ in range(rand_episodes):
-        env.reset()
-        episode_reward = 0
-
-        for _ in range(max_steps):
-            env.render()
-            action = env.action_space.sample()
-
-            new_state, reward, done, _ = env.step(action)
-            # print(new_state, reward)
-
-            episode_reward += reward
-
-            if done:
-                break
-
-        rewards.append(episode_reward)
-
-    print("Average score over time: " + str(sum(rewards) / rand_episodes))
-    print(rewards)
-
-
-# play_rand_games()
-
-
 class Bipedal_Walker:
     def __init__(self):
         self.max_steps = 2000
@@ -63,9 +32,34 @@ class Bipedal_Walker:
             max_steps = self.max_steps
         self.actor_critic.train_agent(episodes, max_steps, render, render_freq, verbose)
 
+    # Play some random games at first to get a feel
+    def play_rand_games(self):
+        rand_episodes = 10
+        rewards = []
+        for _ in range(rand_episodes):
+            self.env.reset()
+            episode_reward = 0
+
+            for _ in range(self.max_steps):
+                self.env.render()
+                action = self.env.action_space.sample()
+
+                new_state, reward, done, _ = self.env.step(action)
+                # print(new_state, reward)
+
+                episode_reward += reward
+
+                if done:
+                    break
+
+            rewards.append(episode_reward)
+
+        print("Average score over time: " + str(sum(rewards) / rand_episodes))
+        print(rewards)
+
 
 if __name__ == "__main__":
     biped = Bipedal_Walker()
     import cProfile
     # cProfile.run('biped.train_walker(verbose=True)')
-    biped.trainer(render=True, render_freq=500, verbose=True)
+    biped.trainer(verbose=True)

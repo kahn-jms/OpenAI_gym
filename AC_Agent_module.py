@@ -8,12 +8,12 @@ import os
 import random
 from collections import deque
 
-import gym
+# import gym
 import numpy as np
 
-import keras
-from keras.models import Model, Sequential, load_model
-from keras.layers import Input, Dense, Activation
+# import keras
+from keras.models import Model, load_model
+from keras.layers import Input, Dense
 from keras.layers.merge import Add
 from keras.optimizers import Adam
 
@@ -29,15 +29,17 @@ class AC_Agent:
         self.actor_backup = os.path.join('backup', '{}_actor_backup.h5'.format(env.spec.id))
         self.critic_backup = os.path.join('backup', '{}_critic_backup.h5'.format(env.spec.id))
 
-        self.memory = deque(maxlen=2000)
-        self.learning_rate = 0.001
+        self.memory = deque(maxlen=4000)
+        self.actor_lr = 0.001
+        self.critic_lr = 0.001
         self.gamma = 0.95
         self.tau = 0.125
         self.sample_batch_size = 32
+        self.epochs = 12
 
         self.exploration_rate = 1.0
-        self.exploration_decay = 0.995
-        self.exploration_min = 0.01
+        self.exploration_decay = 0.95
+        self.exploration_min = 0.1
 
         # Calculate de/dA as = de/dC * dC/dA, where e is error, C critic, A act
         # Actor model and gradients setup
@@ -60,7 +62,7 @@ class AC_Agent:
         # apply_gradients() is second part of minimize() (compute_gradients() is first part)
         # Input; List of (gradient, variable) pairs as returned by compute_gradients()
         # Output: Operation that applies the gradients
-        self.optimize = tf.train.AdamOptimizer(self.learning_rate).apply_gradients(grads)
+        self.optimize = tf.train.AdamOptimizer(self.actor_lr).apply_gradients(grads)
 
         # Critic model and gradients setup
         self.critic_state_input, self.critic_action_input, self.critic_model = self._build_critic_model()
@@ -97,16 +99,16 @@ class AC_Agent:
     def _build_actor_model(self):
         # Need this to return with the model itself
         state_input = Input(shape=self.env.observation_space.shape)
-        d1 = Dense(12, activation='relu')(state_input)
-        d2 = Dense(24, activation='relu')(d1)
-        # d3 = Dense(12, activation='relu')(d2)
+        d1 = Dense(64, activation='relu')(state_input)
+        d2 = Dense(128, activation='relu')(d1)
+        d3 = Dense(64, activation='relu')(d2)
         # Should have different output layer for each action if actions have different ranges,
         # e.g. [-1,1] (tanh) or [0,1] (sigmoid)
-        output = Dense(self.env.action_space.shape[0], activation='tanh')(d2)
+        output = Dense(self.env.action_space.shape[0], activation='tanh')(d3)
 
-        model = Model(input=state_input, output=output)
-        adam = Adam(lr=0.001)
-        model.compile(loss='mse', optimizer=adam)
+        model = Model(inputs=state_input, outputs=output)
+        # adam = Adam(lr=0.001)
+        # model.compile(loss='mse', optimizer=adam)
 
         # Recover previous training
         if os.path.isfile(self.actor_backup):
@@ -118,17 +120,17 @@ class AC_Agent:
     def _build_critic_model(self):
         # Need this to return with the model itself
         state_input = Input(shape=self.env.observation_space.shape)
-        s1 = Dense(12, activation='relu')(state_input)
+        s1 = Dense(64, activation='relu')(state_input)
         # Why linear activation?
-        s2 = Dense(12)(s1)
+        s2 = Dense(64)(s1)
 
         # Also need action input to complete dat dere chain rule
         action_input = Input(shape=self.env.action_space.shape)
         # Why linear activation?
-        a1 = Dense(12)(action_input)
+        a1 = Dense(64)(action_input)
 
         merged = Add()([s2, a1])
-        m1 = Dense(16, activation='relu')(merged)
+        m1 = Dense(64, activation='relu')(merged)
 
         # This is really where the magic is
         # The issue with DQN was that the action space was limited and discrete
@@ -139,8 +141,8 @@ class AC_Agent:
         # Not sure what activation to put here, need to check output range
         output = Dense(1, activation='linear')(m1)
 
-        model = Model(input=[state_input, action_input], output=output)
-        adam = Adam(lr=0.01)
+        model = Model(inputs=[state_input, action_input], outputs=output)
+        adam = Adam(lr=self.critic_lr)
         model.compile(loss='mse', optimizer=adam)
 
         # Recover previous training
@@ -248,7 +250,6 @@ class AC_Agent:
                     next_state = next_state.reshape((1, self.env.observation_space.shape[0]))
                     self._remember(state, action, reward, next_state, done)
 
-                    # Should this go here? I dunno
                     self._train()
                     self._update_targets()
 
@@ -259,7 +260,13 @@ class AC_Agent:
                     if done:
                         break
 
+                # Try training after each episode with bigger batch size
+                # for _ in range(self.epochs):
+                #     self._train()
+                #     self._update_targets()
+
                 if verbose:
                     print("Episode {}# Steps: {} Reward: {}".format(index_episode, index, tot_reward))
+                    print('exploration rate: {}'.format(self.exploration_rate))
         finally:
             self._save_models()
