@@ -96,9 +96,10 @@ class AC_Agent:
         state_input = Input(shape=self.env.observation_space.shape)
         d1 = Dense(12, activation='relu')(state_input)
         d2 = Dense(24, activation='relu')(d1)
-        d3 = Dense(12, activation='relu')(d2)
-        # Why shape[0] here?
-        output = Dense(self.env.action_space.shape[0], activation='relu')(d3)
+        # d3 = Dense(12, activation='relu')(d2)
+        # Should have different output layer for each action if actions have different ranges,
+        # e.g. [-1,1] (tanh) or [0,1] (sigmoid)
+        output = Dense(self.env.action_space.shape[0], activation='tanh')(d2)
 
         model = Model(input=state_input, output=output)
         adam = Adam(lr=0.001)
@@ -132,10 +133,11 @@ class AC_Agent:
         # chase that
         # Instead we don't train on the decisions of the actor directly, instead we train
         # with the score the critic gives the actor for it's last action?
-        output = Dense(1, activation='relu')(m1)
+        # Not sure what activation to put here, need to check output range
+        output = Dense(1, activation='linear')(m1)
 
         model = Model(input=[state_input, action_input], output=output)
-        adam = Adam(lr=0.001)
+        adam = Adam(lr=0.01)
         model.compile(loss='mse', optimizer=adam)
 
         # Recover previous training
@@ -159,7 +161,7 @@ class AC_Agent:
                     self.critic_action_input: predicted_action
                 })[0]
 
-            # and here
+            # This is basically an actor_model.fit?
             self.sess.run(
                 self.optimize,
                 feed_dict={
@@ -171,12 +173,12 @@ class AC_Agent:
         for sample in samples:
             state, action, reward, next_state, done = sample
             if not done:
-                target_action = self.actor_model.predict(next_state)
+                target_action = self.target_actor_model.predict(next_state)
                 # Predict the reward the next action we would take woud have on the new state
                 # resulting from the current action we took.
                 # Use this to help the critic look ahead and judge for the highest rewarding step
-                future_reward = self.critic_model.predict([next_state, target_action])[0][0]
-                reward += self.gamma * future_reward
+                target_future_reward = self.target_critic_model.predict([next_state, target_action])[0][0]
+                reward += self.gamma * target_future_reward
 
             reward = np.reshape(reward, (1, 1))
             action = np.reshape(action, (1, self.env.action_space.shape[0]))
@@ -197,10 +199,8 @@ class AC_Agent:
         actor_target_weights = self.target_actor_model.get_weights()
         # print('amw:', actor_model_weights)
         # print('amw:', actor_target_weights)
-
         for i in range(len(actor_target_weights)):
-            # I think we need tau weighting here?
-            # actor_target_weights[i] = actor_model_weights[i]
+            # Need the target network to follow main network with some delay otherwise training unstable
             actor_target_weights[i] = (self.tau * actor_model_weights[i] +
                                        (1 - self.tau) * actor_target_weights[i])
         self.target_actor_model.set_weights(actor_target_weights)
@@ -208,10 +208,7 @@ class AC_Agent:
     def _update_critic_target(self):
         critic_model_weights = self.critic_model.get_weights()
         critic_target_weights = self.target_critic_model.get_weights()
-
         for i in range(len(critic_target_weights)):
-            # I think we need tau weighting here?
-            # critic_target_weights[i] = critic_model_weights[i]
             critic_target_weights[i] = (self.tau * critic_model_weights[i] +
                                         (1 - self.tau) * critic_target_weights[i])
         self.target_critic_model.set_weights(critic_target_weights)
