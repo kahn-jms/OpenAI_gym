@@ -29,17 +29,17 @@ class AC_Agent:
         self.actor_backup = os.path.join('backup', '{}_actor_backup.h5'.format(env.spec.id))
         self.critic_backup = os.path.join('backup', '{}_critic_backup.h5'.format(env.spec.id))
 
-        self.memory = deque(maxlen=4000)
-        self.actor_lr = 0.001
+        self.memory = deque(maxlen=2000)
+        self.actor_lr = 0.0001
         self.critic_lr = 0.001
-        self.gamma = 0.95
-        self.tau = 0.125
+        self.gamma = 0.99
+        self.tau = 0.2
         self.sample_batch_size = 32
-        self.epochs = 12
+        self.epochs = 1
 
         self.exploration_rate = 1.0
         self.exploration_decay = 0.95
-        self.exploration_min = 0.1
+        self.exploration_min = 0.01
 
         # Calculate de/dA as = de/dC * dC/dA, where e is error, C critic, A act
         # Actor model and gradients setup
@@ -99,7 +99,7 @@ class AC_Agent:
     def _build_actor_model(self):
         # Need this to return with the model itself
         state_input = Input(shape=self.env.observation_space.shape)
-        d1 = Dense(64, activation='relu')(state_input)
+        d1 = Dense(128, activation='relu')(state_input)
         d2 = Dense(128, activation='relu')(d1)
         d3 = Dense(64, activation='relu')(d2)
         # Should have different output layer for each action if actions have different ranges,
@@ -114,13 +114,13 @@ class AC_Agent:
         if os.path.isfile(self.actor_backup):
             model.load_weights(self.actor_backup)
             # model = load_model(self.weight_backup)
-            # self.exploration_rate = self.exploration_min
+            self.exploration_rate = self.exploration_min
         return state_input, model
 
     def _build_critic_model(self):
         # Need this to return with the model itself
         state_input = Input(shape=self.env.observation_space.shape)
-        s1 = Dense(64, activation='relu')(state_input)
+        s1 = Dense(128, activation='relu')(state_input)
         # Why linear activation?
         s2 = Dense(64)(s1)
 
@@ -130,7 +130,7 @@ class AC_Agent:
         a1 = Dense(64)(action_input)
 
         merged = Add()([s2, a1])
-        m1 = Dense(64, activation='relu')(merged)
+        m1 = Dense(64, activation='linear')(merged)
 
         # This is really where the magic is
         # The issue with DQN was that the action space was limited and discrete
