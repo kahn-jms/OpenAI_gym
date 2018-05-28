@@ -30,16 +30,16 @@ class AC_Agent:
         self.critic_backup = os.path.join('backup', '{}_critic_backup.h5'.format(env.spec.id))
 
         self.memory = deque(maxlen=2000)
-        self.actor_lr = 0.0001
-        self.critic_lr = 0.001
-        self.gamma = 0.99
-        self.tau = 0.2
+        self.actor_lr = 0.005
+        self.critic_lr = 0.05
+        self.gamma = 0.97
+        self.tau = 0.15
         self.sample_batch_size = 32
-        self.epochs = 1
+        self.epochs = 30
 
         self.exploration_rate = 1.0
         self.exploration_decay = 0.95
-        self.exploration_min = 0.01
+        self.exploration_min = 0.05
 
         # Calculate de/dA as = de/dC * dC/dA, where e is error, C critic, A act
         # Actor model and gradients setup
@@ -47,14 +47,14 @@ class AC_Agent:
         _, self.target_actor_model = self._build_actor_model()
 
         # Where we will feed de/dC (from critic) as input to actor training
-        self.actor_critic_grad = tf.placeholder(tf.float32, (None, self.env.action_space.shape[0]))
+        self.actor_critic_grad = tf.placeholder(tf.float32, [None, self.env.action_space.shape[0]])
 
         # Calculate dC/dA (from actor), performs  partial derivatives of actor model outputs
         # w.r.t each of the actor model trainable weights.
         # Output is tensor of length len(trainable_weights)
         # actor_critic_grad sets initial gradients for actor_model.outputs
         self.actor_grads = tf.gradients(
-            self.actor_model.outputs,
+            self.actor_model.output,
             self.actor_model.trainable_weights,
             -self.actor_critic_grad)
 
@@ -69,12 +69,13 @@ class AC_Agent:
         _, _, self.target_critic_model = self._build_critic_model()
 
         # Calculate de/dC (from critic)
-        self.critic_grads = tf.gradients(self.critic_model.input, self.critic_action_input)
+        # self.critic_grads = tf.gradients(self.critic_model.input, self.critic_action_input)
+        self.critic_grads = tf.gradients(self.critic_model.output, self.critic_action_input)
 
         # Initialise everything for gradient calcs
         # I think this should be global_variables_initializer() instead
-        # self.sess.run(tf.initialize_all_variables())
-        self.sess.run(tf.global_variables_initializer())
+        self.sess.run(tf.initialize_all_variables())
+        # self.sess.run(tf.global_variables_initializer())
 
     def _save_models(self):
         if not os.path.exists('backup'):
@@ -86,7 +87,7 @@ class AC_Agent:
         self.critic_model.save(self.critic_backup)
 
     def _remember(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
+        self.memory.append([state, action, reward, next_state, done])
 
     def _act(self, state):
         if np.random.rand() <= self.exploration_rate:
@@ -99,16 +100,16 @@ class AC_Agent:
     def _build_actor_model(self):
         # Need this to return with the model itself
         state_input = Input(shape=self.env.observation_space.shape)
-        d1 = Dense(128, activation='relu')(state_input)
-        d2 = Dense(128, activation='relu')(d1)
-        d3 = Dense(64, activation='relu')(d2)
+        d1 = Dense(16, activation='relu')(state_input)
+        d2 = Dense(16, activation='relu')(d1)
+        # d3 = Dense(64, activation='relu')(d2)
         # Should have different output layer for each action if actions have different ranges,
         # e.g. [-1,1] (tanh) or [0,1] (sigmoid)
-        output = Dense(self.env.action_space.shape[0], activation='tanh')(d3)
+        output = Dense(self.env.action_space.shape[0], activation='relu')(d2)
 
         model = Model(inputs=state_input, outputs=output)
-        # adam = Adam(lr=0.001)
-        # model.compile(loss='mse', optimizer=adam)
+        adam = Adam(lr=0.001)
+        model.compile(loss='mse', optimizer=adam)
 
         # Recover previous training
         if os.path.isfile(self.actor_backup):
@@ -120,17 +121,17 @@ class AC_Agent:
     def _build_critic_model(self):
         # Need this to return with the model itself
         state_input = Input(shape=self.env.observation_space.shape)
-        s1 = Dense(128, activation='relu')(state_input)
+        s1 = Dense(16, activation='relu')(state_input)
         # Why linear activation?
-        s2 = Dense(64)(s1)
+        s2 = Dense(16)(s1)
 
         # Also need action input to complete dat dere chain rule
         action_input = Input(shape=self.env.action_space.shape)
         # Why linear activation?
-        a1 = Dense(64)(action_input)
+        a1 = Dense(16)(action_input)
 
         merged = Add()([s2, a1])
-        m1 = Dense(64, activation='linear')(merged)
+        m1 = Dense(16, activation='relu')(merged)
 
         # This is really where the magic is
         # The issue with DQN was that the action space was limited and discrete
@@ -139,7 +140,7 @@ class AC_Agent:
         # Instead we don't train on the decisions of the actor directly, instead we train
         # with the score the critic gives the actor for it's last action?
         # Not sure what activation to put here, need to check output range
-        output = Dense(1, activation='linear')(m1)
+        output = Dense(1, activation='relu')(m1)
 
         model = Model(inputs=[state_input, action_input], outputs=output)
         adam = Adam(lr=self.critic_lr)
@@ -157,6 +158,8 @@ class AC_Agent:
             state, action, reward, next_state, _ = sample
             # Why doesn't this need an if not done check?
             predicted_action = self.actor_model.predict(state)
+            # predicted_action = action
+            # predicted_action = np.reshape(predicted_action, (1, self.env.action_space.shape[0]))
 
             # I don't really understand what's going on here
             grads = self.sess.run(
@@ -187,7 +190,8 @@ class AC_Agent:
 
             reward = np.reshape(reward, (1, 1))
             action = np.reshape(action, (1, self.env.action_space.shape[0]))
-            self.critic_model.fit([state, action], reward, verbose=0)
+            # self.critic_model.fit([state, action], reward, verbose=0)
+            self.critic_model.train_on_batch([state, action], reward)
 
     # Was previously called replay()
     def _train(self):
@@ -260,13 +264,13 @@ class AC_Agent:
                     if done:
                         break
 
+                if verbose:
+                    print("Episode {}# Steps: {} Reward: {}".format(index_episode, index, tot_reward))
+                    print('exploration rate: {}'.format(self.exploration_rate))
+
                 # Try training after each episode with bigger batch size
                 # for _ in range(self.epochs):
                 #     self._train()
                 #     self._update_targets()
-
-                if verbose:
-                    print("Episode {}# Steps: {} Reward: {}".format(index_episode, index, tot_reward))
-                    print('exploration rate: {}'.format(self.exploration_rate))
         finally:
             self._save_models()
