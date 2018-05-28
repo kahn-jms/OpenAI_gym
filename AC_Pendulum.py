@@ -64,5 +64,5 @@ if __name__ == "__main__":
     pendulum = Pendulum()
     # import cProfile
     # cProfile.run('biped.train_walker(verbose=True)')
-    pendulum.trainer(verbose=True)
-    # pendulum.trainer(render=True, render_freq=500, verbose=True)
+    # pendulum.trainer(verbose=True)
+    pendulum.trainer(render=True, render_freq=10, verbose=True)

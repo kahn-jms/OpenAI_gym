@@ -16,6 +16,7 @@ from keras.models import Model, load_model
 from keras.layers import Input, Dense
 from keras.layers.merge import Add
 from keras.optimizers import Adam
+from keras.callbacks import TensorBoard
 
 import tensorflow as tf
 
@@ -30,16 +31,17 @@ class AC_Agent:
         self.critic_backup = os.path.join('backup', '{}_critic_backup.h5'.format(env.spec.id))
 
         self.memory = deque(maxlen=2000)
-        self.actor_lr = 0.005
-        self.critic_lr = 0.05
-        self.gamma = 0.97
-        self.tau = 0.15
+        self.actor_lr = 0.0001
+        self.critic_lr = 0.001
+        self.gamma = 0.95
+        self.tau = 0.2
         self.sample_batch_size = 32
+        self.validation_batch_size = 16
         self.epochs = 30
 
         self.exploration_rate = 1.0
-        self.exploration_decay = 0.95
-        self.exploration_min = 0.05
+        self.exploration_decay = 0.995
+        self.exploration_min = 0.10
 
         # Calculate de/dA as = de/dC * dC/dA, where e is error, C critic, A act
         # Actor model and gradients setup
@@ -52,7 +54,8 @@ class AC_Agent:
         # Calculate dC/dA (from actor), performs  partial derivatives of actor model outputs
         # w.r.t each of the actor model trainable weights.
         # Output is tensor of length len(trainable_weights)
-        # actor_critic_grad sets initial gradients for actor_model.outputs
+        # actor_critic_grad sets initial gradients for actor_model.outputs?
+        # I don't fully understand this so it may be what's causing actor to not converge
         self.actor_grads = tf.gradients(
             self.actor_model.output,
             self.actor_model.trainable_weights,
@@ -62,6 +65,7 @@ class AC_Agent:
         # apply_gradients() is second part of minimize() (compute_gradients() is first part)
         # Input; List of (gradient, variable) pairs as returned by compute_gradients()
         # Output: Operation that applies the gradients
+        # self.actor_loss = tf.summary.scalar('loss', loss)
         self.optimize = tf.train.AdamOptimizer(self.actor_lr).apply_gradients(grads)
 
         # Critic model and gradients setup
@@ -74,8 +78,8 @@ class AC_Agent:
 
         # Initialise everything for gradient calcs
         # I think this should be global_variables_initializer() instead
-        self.sess.run(tf.initialize_all_variables())
-        # self.sess.run(tf.global_variables_initializer())
+        # self.sess.run(tf.initialize_all_variables())
+        self.sess.run(tf.global_variables_initializer())
 
     def _save_models(self):
         if not os.path.exists('backup'):
@@ -100,16 +104,16 @@ class AC_Agent:
     def _build_actor_model(self):
         # Need this to return with the model itself
         state_input = Input(shape=self.env.observation_space.shape)
-        d1 = Dense(16, activation='relu')(state_input)
-        d2 = Dense(16, activation='relu')(d1)
+        d1 = Dense(256, activation='relu')(state_input)
+        d2 = Dense(128, activation='relu')(d1)
         # d3 = Dense(64, activation='relu')(d2)
         # Should have different output layer for each action if actions have different ranges,
         # e.g. [-1,1] (tanh) or [0,1] (sigmoid)
-        output = Dense(self.env.action_space.shape[0], activation='relu')(d2)
+        output = Dense(self.env.action_space.shape[0], activation='tanh')(d2)
 
         model = Model(inputs=state_input, outputs=output)
-        adam = Adam(lr=0.001)
-        model.compile(loss='mse', optimizer=adam)
+        # adam = Adam(lr=0.001)
+        # model.compile(loss='mse', optimizer=adam)
 
         # Recover previous training
         if os.path.isfile(self.actor_backup):
@@ -121,17 +125,17 @@ class AC_Agent:
     def _build_critic_model(self):
         # Need this to return with the model itself
         state_input = Input(shape=self.env.observation_space.shape)
-        s1 = Dense(16, activation='relu')(state_input)
+        s1 = Dense(256, activation='relu')(state_input)
         # Why linear activation?
-        s2 = Dense(16)(s1)
+        s2 = Dense(128, activation='relu')(s1)
 
         # Also need action input to complete dat dere chain rule
         action_input = Input(shape=self.env.action_space.shape)
         # Why linear activation?
-        a1 = Dense(16)(action_input)
+        a1 = Dense(128, activation='relu')(action_input)
 
         merged = Add()([s2, a1])
-        m1 = Dense(16, activation='relu')(merged)
+        m1 = Dense(128, activation='relu')(merged)
 
         # This is really where the magic is
         # The issue with DQN was that the action space was limited and discrete
@@ -140,11 +144,11 @@ class AC_Agent:
         # Instead we don't train on the decisions of the actor directly, instead we train
         # with the score the critic gives the actor for it's last action?
         # Not sure what activation to put here, need to check output range
-        output = Dense(1, activation='relu')(m1)
+        output = Dense(1, activation='linear')(m1)
 
         model = Model(inputs=[state_input, action_input], outputs=output)
         adam = Adam(lr=self.critic_lr)
-        model.compile(loss='mse', optimizer=adam)
+        model.compile(loss='mse', optimizer=adam, metrics=['mse', 'mae', 'mape'])
 
         # Recover previous training
         if os.path.isfile(self.critic_backup):
@@ -154,31 +158,42 @@ class AC_Agent:
         return state_input, action_input, model
 
     def _train_actor(self, samples):
-        for sample in samples:
+        states = np.asarray([s[0] for s in samples])
+        actions = np.zeros((len(samples), self.env.action_space.shape[0]))
+        # actions = np.asarray([s[1] for s in samples])
+        for idx, sample in enumerate(samples):
             state, action, reward, next_state, _ = sample
-            # Why doesn't this need an if not done check?
+        #     # Why not just use the actual action used?
             predicted_action = self.actor_model.predict(state)
-            # predicted_action = action
-            # predicted_action = np.reshape(predicted_action, (1, self.env.action_space.shape[0]))
+        #     # predicted_action = action
+        #     # predicted_action = np.reshape(predicted_action, (1, self.env.action_space.shape[0]))
+            actions[idx] = predicted_action
 
-            # I don't really understand what's going on here
-            grads = self.sess.run(
-                self.critic_grads,
-                feed_dict={
-                    self.critic_state_input: state,
-                    self.critic_action_input: predicted_action
-                })[0]
+        states = np.reshape(states, (len(samples), self.env.observation_space.shape[0]))
+        # actions = np.reshape(actions, (len(samples), self.env.action_space.shape[0]))
+        # I don't really understand what's going on here
+        grads = self.sess.run(
+            self.critic_grads,
+            feed_dict={
+                self.critic_state_input: states,
+                # self.critic_action_input: predicted_action
+                self.critic_action_input: actions
+            })[0]
 
-            # This is basically an actor_model.fit?
-            self.sess.run(
-                self.optimize,
-                feed_dict={
-                    self.actor_state_input: state,
-                    self.actor_critic_grad: grads
-                })
+        # This is basically an actor_model.fit?
+        self.sess.run(
+            self.optimize,
+            feed_dict={
+                self.actor_state_input: states,
+                self.actor_critic_grad: grads
+            }
+        )
 
     def _train_critic(self, samples):
-        for sample in samples:
+        states = np.asarray([s[0] for s in samples])
+        actions = np.asarray([s[1] for s in samples])
+        rewards = np.zeros((len(samples), 1))
+        for idx, sample in enumerate(samples):
             state, action, reward, next_state, done = sample
             if not done:
                 target_action = self.target_actor_model.predict(next_state)
@@ -188,18 +203,42 @@ class AC_Agent:
                 target_future_reward = self.target_critic_model.predict([next_state, target_action])[0][0]
                 reward += self.gamma * target_future_reward
 
-            reward = np.reshape(reward, (1, 1))
-            action = np.reshape(action, (1, self.env.action_space.shape[0]))
-            # self.critic_model.fit([state, action], reward, verbose=0)
-            self.critic_model.train_on_batch([state, action], reward)
+            rewards[idx] = reward
+
+        states = np.reshape(states, (len(samples), self.env.observation_space.shape[0]))
+        actions = np.reshape(actions, (len(samples), self.env.action_space.shape[0]))
+        # rewards = np.reshape(reward, (None, 1))
+
+        # Adding tensorboard callback for review
+        tbCallBack = TensorBoard(
+            log_dir='logs',
+            histogram_freq=10,
+            write_graph=False,
+            write_grads=True,
+            batch_size=self.validation_batch_size,
+            write_images=False,
+        )
+
+        self.critic_model.fit(
+            [states[:self.sample_batch_size], actions[:self.sample_batch_size]],
+            rewards[:self.sample_batch_size],
+            batch_size=self.sample_batch_size,
+            verbose=0,
+            # validation_data=(
+            #     [states[self.sample_batch_size:], actions[self.sample_batch_size:]],
+            #     rewards[self.sample_batch_size:]
+            # ),
+            # callbacks=[tbCallBack],
+        )
+        # self.critic_model.train_on_batch([states, actions], rewards)
 
     # Was previously called replay()
     def _train(self):
-        if len(self.memory) < self.sample_batch_size:
+        if len(self.memory) < (self.sample_batch_size + self.validation_batch_size):
             return
 
         # rewards = []
-        sample_batch = random.sample(self.memory, self.sample_batch_size)
+        sample_batch = random.sample(self.memory, (self.sample_batch_size + self.validation_batch_size))
         self._train_critic(sample_batch)
         self._train_actor(sample_batch)
 
@@ -243,7 +282,8 @@ class AC_Agent:
                 tot_reward = 0
                 for step in range(max_steps):
                     if render and (index_episode % render_freq == 0):
-                        self.env.render()
+                        if step % 3 == 0:
+                            self.env.render()
 
                     state = np.reshape(state, (1, self.env.observation_space.shape[0]))
 
@@ -266,7 +306,7 @@ class AC_Agent:
 
                 if verbose:
                     print("Episode {}# Steps: {} Reward: {}".format(index_episode, index, tot_reward))
-                    print('exploration rate: {}'.format(self.exploration_rate))
+                    # print('exploration rate: {}'.format(self.exploration_rate))
 
                 # Try training after each episode with bigger batch size
                 # for _ in range(self.epochs):

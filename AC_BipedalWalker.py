@@ -15,7 +15,7 @@ from AC_Agent_module import AC_Agent
 
 class Bipedal_Walker:
     def __init__(self):
-        self.max_steps = 2000
+        self.max_steps = 700
         self.episodes = 200
         self.env = gym.make('BipedalWalker-v2')
         self.env.reset()
@@ -62,4 +62,5 @@ if __name__ == "__main__":
     biped = Bipedal_Walker()
     import cProfile
     # cProfile.run('biped.train_walker(verbose=True)')
-    biped.trainer(verbose=True)
+    # biped.trainer(verbose=True)
+    biped.trainer(render=True, render_freq=1, verbose=True)
