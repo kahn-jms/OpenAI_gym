@@ -33,8 +33,8 @@ class AC_Agent:
         self.memory = deque(maxlen=2000)
         self.actor_lr = 0.0001
         self.critic_lr = 0.001
-        self.gamma = 0.95
-        self.tau = 0.2
+        self.gamma = 0.99
+        self.tau = 0.01
         self.sample_batch_size = 32
         self.validation_batch_size = 16
         self.epochs = 30
@@ -46,7 +46,10 @@ class AC_Agent:
         # Calculate de/dA as = de/dC * dC/dA, where e is error, C critic, A act
         # Actor model and gradients setup
         self.actor_state_input, self.actor_model = self._build_actor_model()
+        self.actor_params = tf.trainable_variables()
+
         _, self.target_actor_model = self._build_actor_model()
+        self.target_actor_params = tf.trainable_variables()[len(self.actor_params):]
 
         # Where we will feed de/dC (from critic) as input to actor training
         self.actor_critic_grad = tf.placeholder(tf.float32, [None, self.env.action_space.shape[0]])
@@ -56,10 +59,12 @@ class AC_Agent:
         # Output is tensor of length len(trainable_weights)
         # actor_critic_grad sets initial gradients for actor_model.outputs?
         # I don't fully understand this so it may be what's causing actor to not converge
-        self.actor_grads = tf.gradients(
+        # These are unnormalised since we'll process a whole batch
+        self.unnormed_actor_grads = tf.gradients(
             self.actor_model.output,
             self.actor_model.trainable_weights,
             -self.actor_critic_grad)
+        self.actor_grads = list(map(lambda x: tf.div(x, self.sample_batch_size), self.unnormed_actor_grads))
 
         grads = zip(self.actor_grads, self.actor_model.trainable_weights)
         # apply_gradients() is second part of minimize() (compute_gradients() is first part)
@@ -70,7 +75,11 @@ class AC_Agent:
 
         # Critic model and gradients setup
         self.critic_state_input, self.critic_action_input, self.critic_model = self._build_critic_model()
+        self.critic_params = tf.trainable_variables()[(len(self.actor_params) + len(self.target_actor_params)):]
+
         _, _, self.target_critic_model = self._build_critic_model()
+        self.target_critic_params = tf.trainable_variables()[
+            (len(self.actor_params) + len(self.target_actor_params) + len(self.critic_params)):]
 
         # Calculate de/dC (from critic)
         # self.critic_grads = tf.gradients(self.critic_model.input, self.critic_action_input)
@@ -109,7 +118,7 @@ class AC_Agent:
         # d3 = Dense(64, activation='relu')(d2)
         # Should have different output layer for each action if actions have different ranges,
         # e.g. [-1,1] (tanh) or [0,1] (sigmoid)
-        output = Dense(self.env.action_space.shape[0], activation='tanh')(d2)
+        output = Dense(self.env.action_space.shape[0], activation='linear')(d2)
 
         model = Model(inputs=state_input, outputs=output)
         # adam = Adam(lr=0.001)
@@ -210,27 +219,38 @@ class AC_Agent:
         # rewards = np.reshape(reward, (None, 1))
 
         # Adding tensorboard callback for review
-        tbCallBack = TensorBoard(
-            log_dir='logs',
-            histogram_freq=10,
-            write_graph=False,
-            write_grads=True,
-            batch_size=self.validation_batch_size,
-            write_images=False,
-        )
+        # tbCallBack = TensorBoard(
+        #     log_dir='logs',
+        #     histogram_freq=10,
+        #     write_graph=False,
+        #     write_grads=True,
+        #     batch_size=self.validation_batch_size,
+        #     write_images=False,
+        # )
 
-        self.critic_model.fit(
+        # self.critic_model.fit(
+        #     [states[:self.sample_batch_size], actions[:self.sample_batch_size]],
+        #     rewards[:self.sample_batch_size],
+        #     batch_size=self.sample_batch_size,
+        #     verbose=0,
+        #     # validation_data=(
+        #     #     [states[self.sample_batch_size:], actions[self.sample_batch_size:]],
+        #     #     rewards[self.sample_batch_size:]
+        #     # ),
+        #     # callbacks=[tbCallBack],
+        # )
+        critic_metrics = self.critic_model.train_on_batch(
             [states[:self.sample_batch_size], actions[:self.sample_batch_size]],
             rewards[:self.sample_batch_size],
-            batch_size=self.sample_batch_size,
-            verbose=0,
-            # validation_data=(
-            #     [states[self.sample_batch_size:], actions[self.sample_batch_size:]],
-            #     rewards[self.sample_batch_size:]
-            # ),
-            # callbacks=[tbCallBack],
         )
-        # self.critic_model.train_on_batch([states, actions], rewards)
+        # print('Critic: ', end='')
+        # print(self.critic_model.metrics_names[0], ': ', critic_metrics[0], ' | ', end='')
+        # print(self.critic_model.metrics_names[1], ': ', critic_metrics[1], ' | ', end='')
+        # print(self.critic_model.metrics_names[2], ': ', critic_metrics[2], ' | ', end='')
+        # print(self.critic_model.metrics_names[3], ': ', critic_metrics[3], ' | ')
+        # for i, name in enumerate(self.critic_model.metrics_names):
+        #     print(name, ': ', critic_metrics[i], ' | ', end='')
+        return critic_metrics
 
     # Was previously called replay()
     def _train(self):
@@ -249,22 +269,25 @@ class AC_Agent:
             self.exploration_rate *= self.exploration_decay
 
     def _update_actor_target(self):
-        actor_model_weights = self.actor_model.get_weights()
-        actor_target_weights = self.target_actor_model.get_weights()
-        # print('amw:', actor_model_weights)
-        # print('amw:', actor_target_weights)
-        for i in range(len(actor_target_weights)):
-            # Need the target network to follow main network with some delay otherwise training unstable
-            actor_target_weights[i] = (self.tau * actor_model_weights[i] +
-                                       (1 - self.tau) * actor_target_weights[i])
-        self.target_actor_model.set_weights(actor_target_weights)
+        # actor_model_weights = self.actor_model.get_weights()
+        # actor_target_weights = self.target_actor_model.get_weights()
+        # # print('amw:', actor_model_weights)
+        # # print('amw:', actor_target_weights)
+        # for i in range(len(actor_target_weights)):
+        #     # Need the target network to follow main network with some delay otherwise training unstable
+        #     actor_target_weights[i] = (self.tau * actor_model_weights[i] +
+        #                                (1 - self.tau) * actor_target_weights[i])
+        # self.target_actor_model.set_weights(actor_target_weights)
+        [self.target_actor_params[i].assign(tf.multiply(self.actor_params[i], self.tau) +
+                                            tf.multiply(self.target_actor_params[i], 1. - self.tau))
+         for i in range(len(self.target_actor_params))]
 
     def _update_critic_target(self):
         critic_model_weights = self.critic_model.get_weights()
         critic_target_weights = self.target_critic_model.get_weights()
         for i in range(len(critic_target_weights)):
             critic_target_weights[i] = (self.tau * critic_model_weights[i] +
-                                        (1 - self.tau) * critic_target_weights[i])
+                                        (1. - self.tau) * critic_target_weights[i])
         self.target_critic_model.set_weights(critic_target_weights)
 
     def _update_targets(self):
@@ -282,7 +305,7 @@ class AC_Agent:
                 tot_reward = 0
                 for step in range(max_steps):
                     if render and (index_episode % render_freq == 0):
-                        if step % 3 == 0:
+                        if step % 5 == 0:
                             self.env.render()
 
                     state = np.reshape(state, (1, self.env.observation_space.shape[0]))
